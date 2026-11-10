@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Steep – a tea timer</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700&display=swap" rel="stylesheet">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#e4ede6; --card:#f4f8f4; --ink:#14211d; --muted:#4f6a60;
+  --pine:#1f3a33; --jade:#5e9c82; --tea:#c8873a; --line:#b9cdc1;
+  --on-pine:#f4f8f4;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#12201c; --card:#1b2e28; --ink:#e6f0ea; --muted:#9bb8aa;
+    --pine:#e6f0ea; --jade:#6fb596; --tea:#e0a24f; --line:#2c453c;
+    --on-pine:#12201c;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12201c; --card:#1b2e28; --ink:#e6f0ea; --muted:#9bb8aa;
+  --pine:#e6f0ea; --jade:#6fb596; --tea:#e0a24f; --line:#2c453c;
+  --on-pine:#12201c;
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;
+  line-height:1.5; min-height:100vh;
+  display:flex; justify-content:center; padding:24px 16px;
+}
+main{width:100%; max-width:440px}
+h1{font-size:2.4rem; line-height:1.05; margin:0 0 4px; letter-spacing:-.02em}
+.sub{margin:0 0 20px; color:var(--muted)}
+.teas{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin-bottom:20px}
+.teas button{
+  font:inherit; text-align:left; cursor:pointer; color:var(--ink);
+  background:var(--card); border:1.5px solid var(--line); border-radius:14px; padding:10px 12px;
+}
+.teas button b{display:block}
+.teas button span{font-size:.85rem; color:var(--muted)}
+.teas button[aria-pressed="true"]{background:var(--pine); border-color:var(--pine); color:var(--on-pine)}
+.teas button[aria-pressed="true"] span{color:var(--on-pine); opacity:.8}
+.stage{background:var(--card); border:1.5px solid var(--line); border-radius:28px; padding:20px; text-align:center}
+svg{width:170px; height:170px}
+.cup{fill:none; stroke:var(--pine); stroke-width:4; stroke-linecap:round}
+.liquid{fill:var(--tea); transition:y .4s linear, height .4s linear}
+#time{font-size:3.6rem; font-weight:700; letter-spacing:-.03em; font-variant-numeric:tabular-nums; line-height:1}
+#note{margin:6px 0 16px; color:var(--muted); min-height:1.5em}
+.row{display:flex; gap:8px; justify-content:center; flex-wrap:wrap}
+.row button{
+  font:inherit; font-weight:700; cursor:pointer; border-radius:999px; padding:10px 22px;
+  border:1.5px solid var(--pine); background:transparent; color:var(--pine);
+}
+.row button.primary{background:var(--pine); color:var(--on-pine)}
+button:focus-visible{outline:3px solid var(--tea); outline-offset:2px}
+.steeps{margin-top:14px; font-size:.9rem; color:var(--muted)}
+.steeps strong{color:var(--ink)}
+@media (prefers-reduced-motion:reduce){.liquid{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Steep</h1>
+  <p class="sub">Pick a tea and let it brew. Each re-steep adds 15 seconds.</p>
+  <div class="teas" id="teas" role="group" aria-label="Choose a tea"></div>
+  <section class="stage">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <defs><clipPath id="inside"><path d="M22 32H98V70a28 28 0 0 1-28 28H50a28 28 0 0 1-28-28Z"/></clipPath></defs>
+      <rect class="liquid" id="liquid" x="0" y="98" width="120" height="0" clip-path="url(#inside)"/>
+      <path class="cup" d="M20 30H100V70a30 30 0 0 1-30 30H50a30 30 0 0 1-30-30Z"/>
+      <path class="cup" d="M100 42h6a10 10 0 0 1 0 22h-8"/>
+    </svg>
+    <div id="time" role="timer" aria-live="off">3:00</div>
+    <div id="note"></div>
+    <div class="row">
+      <button class="primary" id="go">Start</button>
+      <button id="reset">Reset</button>
+      <button id="next">Re-steep</button>
+    </div>
+    <div class="steeps">Steep <strong id="count">1</strong></div>
+  </section>
+</main>
+<script>
+const TEAS=[
+  {name:"Green",temp:80,secs:150,tip:"Let the kettle cool a minute after boiling."},
+  {name:"White",temp:85,secs:180,tip:"Gentle water keeps it sweet."},
+  {name:"Oolong",temp:95,secs:210,tip:"Rinse the leaves first for a rounder cup."},
+  {name:"Black",temp:98,secs:240,tip:"Use fully boiling water."},
+  {name:"Herbal",temp:100,secs:420,tip:"Cover the cup to keep the aroma in."}
+];
+let tea=TEAS[0], steep=1, total=0, left=0, endAt=0, timer=null, running=false;
+const $=id=>document.getElementById(id);
+const fmt=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+
+function buildList(){
+  const box=$("teas");
+  TEAS.forEach(t=>{
+    const b=document.createElement("button");
+    b.innerHTML="<b>"+t.name+"</b><span>"+t.temp+"°C · "+fmt(t.secs)+"</span>";
+    b.setAttribute("aria-pressed",t===tea);
+    b.onclick=()=>{tea=t;steep=1;stop();load();
+      [...box.children].forEach((c,i)=>c.setAttribute("aria-pressed",TEAS[i]===tea));};
+    box.appendChild(b);
+  });
+}
+function load(){
+  total=tea.secs+(steep-1)*5; left=total;
+  $("count").textContent=steep;
+  $("note").textContent=tea.temp+"°C. "+tea.tip;
+  $("go").textContent="Start";
+  draw();
+}
+function draw(){
+  $("time").textContent=fmt(Math.max(0,Math.ceil(left)));
+  const full=68, h=full*(1-left/total);
+  $("liquid").setAttribute("y",98-h);
+  $("liquid").setAttribute("height",h);
+}
+function stop(){clearInterval(timer);running=false;$("go").textContent="Start";}
+function tick(){
+  left=(endAt-Date.now())/1000;
+  if(left<=0){left=0;stop();draw();done();return;}
+  draw();
+}
+function done(){
+  $("note").textContent="Ready. Remove the leaves and enjoy.";
+  $("go").textContent="Start";
+  try{
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    [660,880].forEach((f,i)=>{
+      const o=ctx.createOscillator(), g=ctx.createGain();
+      o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(.15,ctx.currentTime+i*.3);
+      g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+i*.3+.5);
+      o.start(ctx.currentTime+i*.3); o.stop(ctx.currentTime+i*.3+.5);
+    });
+  }catch(e){}
+}
+$("go").onclick=()=>{
+  if(running){stop();return;}
+  if(left<=0)load();
+  endAt=Date.now()+left*1000; running=true;
+  $("go").textContent="Pause";
+  timer=setInterval(tick,200);
+};
+$("reset").onclick=()=>{stop();load();};
+$("next").onclick=()=>{stop();steep++;load();};
+buildList(); load();
+</script>
+</body>
+</html>
